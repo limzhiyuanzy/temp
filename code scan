@@ -1,6 +1,112 @@
-git init
-git add .
-git commit -m "initial commit"
-git branch -M main
-git remote add origin https://github.com/limzhiyuanzy/temp.git
-git push -u origin main
+import os
+import asyncio
+from dotenv import load_dotenv
+from telegram import Update
+from telegram.constants import ParseMode
+from telegram.ext import Application, CommandHandler, ContextTypes
+
+load_dotenv()
+
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+ALLOWED_USER_ID = int(os.getenv("ALLOWED_USER_ID", "0"))
+
+MAX_TELEGRAM_LEN = 3900
+
+
+def is_allowed(update: Update) -> bool:
+    user = update.effective_user
+    if user is None:
+        return False
+    return user.id == ALLOWED_USER_ID
+
+
+async def safe_reply(update: Update, text: str) -> None:
+    if update.message is None:
+        return
+
+    if len(text) <= MAX_TELEGRAM_LEN:
+        await update.message.reply_text(text)
+        return
+
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + MAX_TELEGRAM_LEN, len(text))
+        chunks.append(text[start:end])
+        start = end
+
+    for chunk in chunks:
+        await update.message.reply_text(chunk)
+        await asyncio.sleep(0.05)
+
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update):
+        return
+
+    text = (
+        "Commands\n"
+        "/ping\n"
+        "/run <your command>\n\n"
+        "Examples\n"
+        "/run summary today\n"
+        "/run search cpf nomination\n"
+        "/run client 1023\n"
+    )
+    await safe_reply(update, text)
+
+
+async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update):
+        return
+    await safe_reply(update, "pong")
+
+
+def run_your_pc_logic(query: str) -> str:
+    """
+    Replace this with your real logic.
+
+    Example later:
+    1. Read Obsidian vault
+    2. Find relevant notes
+    3. Summarise with OpenAI
+    4. Return markdown text
+    """
+    query = query.strip()
+    if not query:
+        return "No input. Try /run summary today"
+
+    return f"Received: {query}\n\nNext step: plug in your Obsidian script here."
+
+
+async def run_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update):
+        return
+
+    args = context.args
+    query = " ".join(args).strip()
+
+    await safe_reply(update, "Running...")
+    try:
+        result = run_your_pc_logic(query)
+    except Exception as e:
+        result = f"Error\n{type(e).__name__}: {e}"
+
+    await safe_reply(update, result)
+
+
+def main() -> None:
+    if not TOKEN:
+        raise RuntimeError("Missing TELEGRAM_BOT_TOKEN in .env")
+
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("ping", ping_cmd))
+    app.add_handler(CommandHandler("run", run_cmd))
+
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
