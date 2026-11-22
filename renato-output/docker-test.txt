@@ -1,0 +1,1 @@
+Renato Docker to GitHub integration verified.
